@@ -15,7 +15,6 @@ const activate: PluginActivate = (ctx) => {
 
   disposers.push(ctx.i18n.addBundle("zh-CN", "window-model-assistant", { ...bundles["zh-CN"] }));
   disposers.push(ctx.i18n.addBundle("en", "window-model-assistant", { ...bundles.en }));
-  disposers.push(ctx.models.onDidChange(() => void store.refreshModels(false)));
   disposers.push(ctx.ui.registerPanelTab({ key: "window-model-assistant", label: () => t.tab, component: view }));
   disposers.push(ctx.ui.registerSettingsSection({ key: "window-model-assistant", label: () => t.settings, component: view }));
   disposers.push(ctx.ui.registerStatusBarItem({ key: "window-model-assistant", component: makeStatus(ctx, store, t), zone: "end" }));

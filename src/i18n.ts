@@ -16,7 +16,9 @@ export interface Copy {
   noModels: string;
   authoritative: string;
   nonAuthoritative: string;
-  sourceAuthoritative: string;
+  sourceDirectory: string;
+  sourceConfig: string;
+  sourceCatalog: string;
   sourceCache: string;
   sourceBuiltin: string;
   refreshed: string;
@@ -41,15 +43,17 @@ const zh: Copy = {
   apply: "应用",
   saveExpected: "保存为预期",
   autoRestore: "启动时自动恢复",
-  reset: "恢复默认",
+  reset: "恢复建议尺寸",
   modelsTitle: "模型目录",
   refresh: "刷新",
   loading: "正在读取宿主模型目录…",
   noModels: "宿主未返回模型。",
-  authoritative: "权威实时目录",
-  nonAuthoritative: "降级目录",
-  sourceAuthoritative: "宿主权威/实时",
-  sourceCache: "本地缓存",
+  authoritative: "来源目录完整",
+  nonAuthoritative: "配置条目",
+  sourceDirectory: "来源目录",
+  sourceConfig: "配置条目",
+  sourceCatalog: "宿主聚合目录",
+  sourceCache: "缓存副本",
   sourceBuiltin: "引擎内置",
   refreshed: "刷新时间",
   degraded: "降级原因",
@@ -65,10 +69,10 @@ const zh: Copy = {
 const en: Copy = {
   tab: "Window & Models", settings: "Window & Model Assistant", title: "Window & Model Assistant",
   windowTitle: "Main window", current: "Current", expected: "Expected", sampleWechat: "Sample WeChat window",
-  apply: "Apply", saveExpected: "Save as expected", autoRestore: "Restore automatically on startup", reset: "Restore defaults",
+  apply: "Apply", saveExpected: "Save as expected", autoRestore: "Restore automatically on startup", reset: "Restore suggested size",
   modelsTitle: "Model catalog", refresh: "Refresh", loading: "Reading the host model catalog…", noModels: "No models returned by host.",
-  authoritative: "Authoritative live catalog", nonAuthoritative: "Fallback catalog", sourceAuthoritative: "Host authoritative/live",
-  sourceCache: "Local cache", sourceBuiltin: "Engine built-in", refreshed: "Refreshed", degraded: "Fallback reason",
+  authoritative: "Source directory", nonAuthoritative: "Configured entry", sourceDirectory: "Source directory", sourceConfig: "Configured entry", sourceCatalog: "Host aggregate catalog",
+  sourceCache: "Cache copy", sourceBuiltin: "Engine built-in", refreshed: "Refreshed", degraded: "Fallback reason",
   availabilityNotice: "Catalog entries mean discovered by the host only; they do not prove provider authentication, quota, or successful invocation.",
   error: "Error", statusAuto: "Auto restore enabled", statusModels: "models", commandRestore: "Restore expected main-window bounds",
   commandRefresh: "Refresh model catalog", suggested: "Suggested initial size (similar to WeChat)",

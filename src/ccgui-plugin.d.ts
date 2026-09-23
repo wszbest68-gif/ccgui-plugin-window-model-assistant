@@ -1,4 +1,4 @@
-/** 预期 @ccgui/plugin-sdk v0.3.16 公共契约子集；宿主合并后应改为包导入。 */
+/** @ccgui/plugin-sdk v0.3.16：窗口与模型助手使用的安全公共契约快照。 */
 export type Disposer = () => void;
 export type ComponentLike<P = Record<string, never>> = (props: P) => unknown;
 
@@ -8,43 +8,44 @@ export interface ReactLike {
 }
 
 export interface WindowBounds { x: number; y: number; width: number; height: number }
-export interface DisplayArea { x: number; y: number; width: number; height: number }
-export type ModelCatalogSource = "authoritative" | "cache" | "engine-builtin";
+export interface WindowStateSnapshot { bounds: WindowBounds; state: string; scaleFactor: number }
+export interface WechatSample { bounds: WindowBounds; executable: string }
+
+export type ModelSourceKind = "catalog" | "cache" | string;
 export interface CatalogModel { id: string; name?: string; capabilities?: string[] }
 export interface ModelProviderCatalog {
   id: string;
   name: string;
   engine: string;
-  source: ModelCatalogSource;
+  source: ModelSourceKind;
   authoritative: boolean;
   refreshedAt: number;
   models: CatalogModel[];
   detail?: string;
 }
-export interface ModelCatalogResult {
-  providers: ModelProviderCatalog[];
-  errors?: Array<{ providerId?: string; message: string }>;
+export interface HostCatalogEntry {
+  engine: string;
+  catalog: unknown;
+  error?: string;
+}
+export interface PluginCatalogResult {
+  entries: HostCatalogEntry[];
+  refreshedAt: number;
 }
 
 export interface PluginContext {
   pluginId: string;
   react: ReactLike;
   host: { locale: string; appVersion: string; sdkVersion: string; isWeb: boolean };
-  storage: {
-    get<T>(key: string): Promise<T | null>;
-    set(key: string, value: unknown): Promise<void>;
-    delete(key: string): Promise<void>;
-  };
+  storage: { get<T>(key: string): Promise<T | null>; set(key: string, value: unknown): Promise<void>; delete(key: string): Promise<void> };
   window: {
-    getMainBounds(): Promise<WindowBounds>;
-    setMainBounds(bounds: WindowBounds): Promise<void>;
-    getAvailableArea(): Promise<DisplayArea>;
-    sampleExternalWindow(query: { app: "wechat" }): Promise<WindowBounds | null>;
-    resetMainBounds(): Promise<void>;
+    getState(): Promise<WindowStateSnapshot>;
+    setNormalBounds(bounds: WindowBounds): Promise<WindowStateSnapshot>;
+    sampleWechat(): Promise<WechatSample>;
   };
   models: {
-    listCatalog(options?: { refresh?: boolean }): Promise<ModelCatalogResult>;
-    onDidChange(cb: () => void): Disposer;
+    catalog(workspace?: string): Promise<HostCatalogEntry[]>;
+    refreshProviderModels(engine: string, providerId: string): Promise<{ models: string[] }>;
   };
   ui: {
     registerPanelTab(def: { key?: string; label: () => string; component: ComponentLike; order?: number }): Disposer;

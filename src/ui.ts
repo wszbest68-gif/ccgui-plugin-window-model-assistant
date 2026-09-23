@@ -17,9 +17,9 @@ function formatTime(timestamp: number, locale: string): string {
 }
 
 function sourceLabel(t: Copy, source: string): string {
-  if (source === "authoritative") return t.sourceAuthoritative;
   if (source === "cache") return t.sourceCache;
-  return t.sourceBuiltin;
+  if (source === "catalog") return t.sourceCatalog;
+  return source;
 }
 
 function button(h: H, label: string, onClick: () => void, primary = false) {
@@ -41,8 +41,8 @@ export function makeAssistantView(ctx: PluginContext, store: AssistantStore, t: 
       h.createElement("div", { className: "wma-provider-head" },
         h.createElement("strong", null, provider.name),
         h.createElement("span", {
-          className: provider.authoritative ? "wma-badge wma-badge-ok" : "wma-badge wma-badge-warn",
-        }, provider.authoritative ? t.authoritative : t.nonAuthoritative),
+          className: provider.source === "cache" ? "wma-badge wma-badge-warn" : "wma-badge wma-badge-ok",
+        }, provider.source === "cache" ? t.sourceCache : provider.authoritative ? t.sourceDirectory : t.sourceConfig),
       ),
       h.createElement("div", { className: "wma-meta" }, `${provider.engine} · ${sourceLabel(t, provider.source)}`),
       h.createElement("div", { className: "wma-meta" }, `${t.refreshed}: ${formatTime(provider.refreshedAt, ctx.host.locale)}`),

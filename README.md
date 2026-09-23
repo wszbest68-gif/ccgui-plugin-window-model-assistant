@@ -15,7 +15,7 @@ CC GUI 插件，只管理 **CC GUI 主窗口**，并通过宿主公开 API 查�
 
 ## 预期宿主 API
 
-本版本面向计划中的 `@ccgui/plugin-sdk ^0.3.16`：`ctx.window` 仅暴露受控主窗口能力，`ctx.models` 暴露经过宿主权限过滤的模型目录及变更订阅。`src/ccgui-plugin.d.ts` 是合并宿主 API 前的公开契约快照，不是私有桥接。
+本版本面向 `@ccgui/plugin-sdk ^0.3.16`：`ctx.window` 通过 `getState`、`setNormalBounds` 和严格微信主窗口采样提供受控能力；`ctx.models.catalog()` 返回宿主安全聚合目录，用户点击刷新时才调用 `refreshProviderModels`。宿主不向插件暴露 URL、密钥或原始 provider 配置。`authoritative` 只表示来源声明的目录完整性，不代表鉴权、在线或真实调用可用。缓存统一标记为 `kind=cache`、`authoritative=false`。
 
 ## 开发
 
