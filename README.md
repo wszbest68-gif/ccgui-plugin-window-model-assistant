@@ -29,7 +29,7 @@ npm run checksums
 
 ## 发布
 
-创建与 `manifest.json` 版本一致的 `0.1.0` 或 `v0.1.0` tag。GitHub Actions 会运行类型检查、单测、构建、manifest 校验并生成 SHA-256 `checksums.txt` 后发布四个安装文件。
+创建与 `manifest.json` 版本完全一致且不带 `v` 的 `0.1.0` tag。GitHub Actions 会运行类型检查、单测、构建、manifest 校验并生成 SHA-256 `checksums.txt` 后发布四个安装文件。
 
 ## 权限
 
