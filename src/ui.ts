@@ -18,6 +18,10 @@ function formatTime(timestamp: number, locale: string): string {
 
 function sourceLabel(t: Copy, source: string): string {
   if (source === "cache") return t.sourceCache;
+  if (source === "engine") return t.sourceEngine;
+  if (source === "provider") return t.sourceProvider;
+  if (source === "default") return t.sourceDefault;
+  if (source === "custom") return t.sourceCustom;
   if (source === "catalog") return t.sourceCatalog;
   return source;
 }
@@ -42,7 +46,7 @@ export function makeAssistantView(ctx: PluginContext, store: AssistantStore, t: 
         h.createElement("strong", null, provider.name),
         h.createElement("span", {
           className: provider.source === "cache" ? "wma-badge wma-badge-warn" : "wma-badge wma-badge-ok",
-        }, provider.source === "cache" ? t.sourceCache : provider.authoritative ? t.sourceDirectory : t.sourceConfig),
+        }, provider.source === "cache" ? t.sourceCache : sourceLabel(t, provider.source)),
       ),
       h.createElement("div", { className: "wma-meta" }, `${provider.engine} · ${sourceLabel(t, provider.source)}`),
       h.createElement("div", { className: "wma-meta" }, `${t.refreshed}: ${formatTime(provider.refreshedAt, ctx.host.locale)}`),

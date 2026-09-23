@@ -11,7 +11,7 @@ export interface WindowBounds { x: number; y: number; width: number; height: num
 export interface WindowStateSnapshot { bounds: WindowBounds; state: string; scaleFactor: number }
 export interface WechatSample { bounds: WindowBounds; executable: string }
 
-export type ModelSourceKind = "catalog" | "cache" | string;
+export type ModelSourceKind = "engine" | "provider" | "default" | "custom" | "cache" | string;
 export interface CatalogModel { id: string; name?: string; capabilities?: string[] }
 export interface ModelProviderCatalog {
   id: string;
@@ -22,14 +22,21 @@ export interface ModelProviderCatalog {
   refreshedAt: number;
   models: CatalogModel[];
   detail?: string;
+  modelCount?: number;
 }
-export interface HostCatalogEntry {
+export interface HostCatalogEntry { engine: string; catalog: unknown }
+export interface CatalogSourceSummary {
   engine: string;
-  catalog: unknown;
-  error?: string;
+  kind: ModelSourceKind;
+  providerId?: string;
+  label?: string;
+  refreshed: number;
+  modelCount: number;
 }
-export interface PluginCatalogResult {
-  entries: HostCatalogEntry[];
+export interface PluginModelCatalogResult {
+  engines: HostCatalogEntry[];
+  sources: CatalogSourceSummary[];
+  errors: Array<{ engine: string; source: "engine" | "provider"; providerId?: string; message: string }>;
   refreshedAt: number;
 }
 
@@ -44,8 +51,7 @@ export interface PluginContext {
     sampleWechat(): Promise<WechatSample>;
   };
   models: {
-    catalog(workspace?: string): Promise<HostCatalogEntry[]>;
-    refreshProviderModels(engine: string, providerId: string): Promise<{ models: string[] }>;
+    catalog(options?: { workspace?: string; refreshProviders?: boolean }): Promise<PluginModelCatalogResult>;
   };
   ui: {
     registerPanelTab(def: { key?: string; label: () => string; component: ComponentLike; order?: number }): Disposer;

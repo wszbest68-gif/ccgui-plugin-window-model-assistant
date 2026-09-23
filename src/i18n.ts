@@ -18,6 +18,10 @@ export interface Copy {
   nonAuthoritative: string;
   sourceDirectory: string;
   sourceConfig: string;
+  sourceEngine: string;
+  sourceProvider: string;
+  sourceDefault: string;
+  sourceCustom: string;
   sourceCatalog: string;
   sourceCache: string;
   sourceBuiltin: string;
@@ -52,6 +56,10 @@ const zh: Copy = {
   nonAuthoritative: "配置条目",
   sourceDirectory: "来源目录",
   sourceConfig: "配置条目",
+  sourceEngine: "引擎目录",
+  sourceProvider: "服务商目录",
+  sourceDefault: "默认模型",
+  sourceCustom: "自定义模型",
   sourceCatalog: "宿主聚合目录",
   sourceCache: "缓存副本",
   sourceBuiltin: "引擎内置",
@@ -71,7 +79,7 @@ const en: Copy = {
   windowTitle: "Main window", current: "Current", expected: "Expected", sampleWechat: "Sample WeChat window",
   apply: "Apply", saveExpected: "Save as expected", autoRestore: "Restore automatically on startup", reset: "Restore suggested size",
   modelsTitle: "Model catalog", refresh: "Refresh", loading: "Reading the host model catalog…", noModels: "No models returned by host.",
-  authoritative: "Source directory", nonAuthoritative: "Configured entry", sourceDirectory: "Source directory", sourceConfig: "Configured entry", sourceCatalog: "Host aggregate catalog",
+  authoritative: "Source directory", nonAuthoritative: "Configured entry", sourceDirectory: "Source directory", sourceConfig: "Configured entry", sourceEngine: "Engine catalog", sourceProvider: "Provider catalog", sourceDefault: "Default models", sourceCustom: "Custom models", sourceCatalog: "Host aggregate catalog",
   sourceCache: "Cache copy", sourceBuiltin: "Engine built-in", refreshed: "Refreshed", degraded: "Fallback reason",
   availabilityNotice: "Catalog entries mean discovered by the host only; they do not prove provider authentication, quota, or successful invocation.",
   error: "Error", statusAuto: "Auto restore enabled", statusModels: "models", commandRestore: "Restore expected main-window bounds",

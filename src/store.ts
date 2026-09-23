@@ -1,9 +1,9 @@
 import type {
-  HostCatalogEntry,
+  CatalogSourceSummary,
   ModelProviderCatalog,
   PluginContext,
+  PluginModelCatalogResult,
   WindowBounds,
-  WindowStateSnapshot,
 } from "./ccgui-plugin";
 
 export interface AssistantState {
@@ -45,32 +45,24 @@ function asModels(value: unknown): Array<{ id: string; name?: string; capabiliti
 }
 
 /** 将宿主安全 catalog DTO 转换为仅含展示字段的来源行；不推断鉴权或在线状态。 */
-export function normalizeCatalog(entries: HostCatalogEntry[]): ModelProviderCatalog[] {
-  const result: ModelProviderCatalog[] = [];
-  for (const entry of entries) {
-    const raw = entry.catalog as { sources?: unknown; models?: unknown } | null;
-    const sources = raw && typeof raw === "object" && Array.isArray(raw.sources) ? raw.sources : null;
-    if (sources) {
-      for (const source of sources) {
-        if (!source || typeof source !== "object") continue;
-        const row = source as Record<string, unknown>;
-        const id = typeof row.id === "string" ? row.id : `${entry.engine}:catalog`;
-        result.push({
-          id,
-          name: typeof row.name === "string" ? row.name : id,
-          engine: entry.engine,
-          source: typeof row.kind === "string" ? row.kind : "catalog",
-          authoritative: row.authoritative === true,
-          refreshedAt: typeof row.refreshedAt === "number" ? row.refreshedAt : Date.now(),
-          models: asModels(row.models),
-          ...(typeof row.detail === "string" ? { detail: row.detail } : {}),
-        });
-      }
-    } else {
-      result.push({ id: `${entry.engine}:catalog`, name: entry.engine, engine: entry.engine, source: "catalog", authoritative: false, refreshedAt: Date.now(), models: asModels(raw?.models ?? entry.catalog), ...(entry.error ? { detail: entry.error } : {}) });
-    }
+export function normalizeCatalog(result: PluginModelCatalogResult): ModelProviderCatalog[] {
+  const rows: ModelProviderCatalog[] = [];
+  for (const entry of result.engines) {
+    const raw = entry.catalog as { models?: unknown; sources?: unknown } | null;
+    const models = asModels(raw?.models ?? entry.catalog);
+    const source = result.sources.find((item: CatalogSourceSummary) => item.engine === entry.engine);
+    rows.push({
+      id: source?.providerId ?? `${entry.engine}:engine`,
+      name: source?.label ?? entry.engine,
+      engine: entry.engine,
+      source: source?.kind ?? "engine",
+      authoritative: source?.kind !== "cache",
+      refreshedAt: source?.refreshed ?? result.refreshedAt,
+      models,
+      modelCount: source?.modelCount ?? models.length,
+    });
   }
-  return result;
+  return rows;
 }
 
 /** 合并宿主目录与缓存；缓存永远为非 authoritative，来源类型为 cache。 */
@@ -98,7 +90,7 @@ export class AssistantStore {
   private state: AssistantState = { loaded: false, busy: false, currentBounds: null, expectedBounds: null, autoRestore: false, providers: [], catalogErrors: [], lastError: null };
   private readonly listeners = new Set<() => void>();
   private disposed = false;
-  private latestEntries: HostCatalogEntry[] = [];
+  private latestEntries: PluginModelCatalogResult | null = null;
   constructor(private readonly ctx: PluginContext) {}
   readonly subscribe = (fn: () => void): (() => void) => { this.listeners.add(fn); return () => this.listeners.delete(fn); };
   readonly getSnapshot = (): AssistantState => this.state;
@@ -163,20 +155,10 @@ export class AssistantStore {
     try { cached = (await this.ctx.storage.get<ModelProviderCatalog[]>(CATALOG_CACHE_KEY)) ?? []; }
     catch (error) { this.set({ catalogErrors: [`缓存读取失败：${asMessage(error)}`] }); }
     try {
-      const entries = await this.ctx.models.catalog();
-      this.latestEntries = entries;
-      const providers = normalizeCatalog(entries);
-      const errors = entries.flatMap((entry) => entry.error ? [`${entry.engine}: ${entry.error}`] : []);
-      if (userRequested) {
-        const refreshable = providers.filter((provider) => provider.source !== "cache" && provider.id !== `${provider.engine}:catalog`);
-        for (const provider of refreshable) {
-          try {
-            const refreshed = await this.ctx.models.refreshProviderModels(provider.engine, provider.id);
-            provider.models = asModels(refreshed.models);
-            provider.refreshedAt = Date.now();
-          } catch (error) { errors.push(`${provider.engine}/${provider.id}: ${asMessage(error)}`); }
-        }
-      }
+      const result = await this.ctx.models.catalog({ refreshProviders: userRequested });
+      this.latestEntries = result;
+      const providers = normalizeCatalog(result);
+      const errors = result.errors.map((error) => `${error.engine}${error.providerId ? `/${error.providerId}` : ""}: ${error.message}`);
       const visible = mergeCatalogs(providers, cached);
       if (providers.length > 0) await this.ctx.storage.set(CATALOG_CACHE_KEY, cacheRows(providers));
       this.set({ providers: visible, catalogErrors: errors, lastError: null, busy: false });
