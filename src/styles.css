@@ -1,0 +1,28 @@
+/* 仅作用于本插件；全部颜色使用宿主语义 token，并提供中性回退。 */
+.wma-panel { display:flex; flex-direction:column; gap:10px; height:100%; overflow-y:auto; box-sizing:border-box; padding:10px 12px; color:var(--color-text-secondary,inherit); font-size:13px; line-height:1.45; }
+.wma-header,.wma-section-head,.wma-provider-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.wma-header h2,.wma-card h3 { margin:0; color:var(--color-text-primary,inherit); }
+.wma-header h2 { font-size:15px; }.wma-card h3 { font-size:13px; }
+.wma-card { display:flex; flex-direction:column; gap:8px; padding:10px; border:1px solid var(--color-separator-border,rgba(127,127,127,.25)); border-radius:9px; background:var(--color-background-primary-default,transparent); }
+.wma-bounds { display:grid; grid-template-columns:auto minmax(0,1fr); gap:4px 8px; margin:0; font-variant-numeric:tabular-nums; }
+.wma-bounds dt { color:var(--color-text-tertiary,inherit); }.wma-bounds dd { margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.wma-actions { display:flex; flex-wrap:wrap; gap:6px; }
+.wma-button,.wma-status { border:1px solid var(--color-separator-border,rgba(127,127,127,.3)); border-radius:6px; background:var(--color-background-secondary-default,transparent); color:var(--color-text-secondary,inherit); font:inherit; cursor:pointer; }
+.wma-button { padding:4px 8px; }.wma-button:hover,.wma-status:hover { background:var(--color-background-tertiary-hover,rgba(127,127,127,.12)); }
+.wma-button-primary { background:var(--color-accent-primary-default,#3b82f6); border-color:transparent; color:var(--color-text-on-accent,#fff); }
+.wma-check { display:flex; align-items:center; gap:6px; cursor:pointer; }
+.wma-notice,.wma-warning,.wma-error,.wma-empty { margin:0; padding:7px 8px; border-radius:6px; font-size:12px; }
+.wma-notice { background:var(--color-background-tertiary-default,rgba(127,127,127,.10)); color:var(--color-text-tertiary,inherit); }
+.wma-warning { background:var(--color-background-warning-subtle,rgba(245,158,11,.12)); color:var(--color-text-warning-default,#a16207); }
+.wma-error { background:var(--color-background-error-subtle,rgba(220,38,38,.12)); color:var(--color-text-error-default,#dc2626); }
+.wma-empty,.wma-meta { color:var(--color-text-tertiary,inherit); font-size:12px; }
+.wma-provider { display:flex; flex-direction:column; gap:3px; padding-top:8px; border-top:1px solid var(--color-separator-border,rgba(127,127,127,.2)); }
+.wma-source { display:flex; flex-direction:column; gap:3px; margin-top:6px; padding:6px; border-radius:6px; background:var(--color-background-secondary-default,rgba(127,127,127,.05)); }
+.wma-badge { flex:none; padding:1px 5px; border-radius:99px; font-size:10px; font-weight:600; }
+.wma-badge-ok { background:var(--color-background-success-subtle,rgba(22,163,74,.12)); color:var(--color-text-success-default,#15803d); }
+.wma-badge-warn { background:var(--color-background-warning-subtle,rgba(245,158,11,.12)); color:var(--color-text-warning-default,#a16207); }
+.wma-model-list { display:flex; flex-direction:column; gap:3px; margin:4px 0 0; padding:0; list-style:none; }
+.wma-model-list li { display:flex; justify-content:space-between; gap:6px; min-width:0; padding:4px 6px; border-radius:5px; background:var(--color-background-secondary-default,rgba(127,127,127,.06)); }
+.wma-model-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--color-text-primary,inherit); }
+.wma-model-list code { overflow:hidden; text-overflow:ellipsis; color:var(--color-text-tertiary,inherit); font-size:11px; }
+.wma-status { padding:2px 7px; font-size:12px; }

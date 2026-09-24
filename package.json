@@ -1,0 +1,22 @@
+{
+  "name": "ccgui-plugin-window-model-assistant",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CC GUI 主窗口尺寸位置恢复与模型目录透明查看插件。",
+  "type": "module",
+  "packageManager": "npm@10.9.0",
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "validate": "node scripts/validate-manifest.mjs",
+    "checksums": "node scripts/checksums.mjs",
+    "check": "npm run typecheck && npm test && npm run build && npm run validate"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vite": "^6.1.0",
+    "vitest": "^3.0.8"
+  }
+}
