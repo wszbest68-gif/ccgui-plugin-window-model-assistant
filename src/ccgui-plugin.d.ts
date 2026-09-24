@@ -1,4 +1,4 @@
-/** @ccgui/plugin-sdk v0.3.16：窗口与模型助手使用的安全公共契约快照。 */
+/** @ccgui/plugin-sdk v0.3.16（宿主 >=1.0.10）：窗口与模型助手使用的安全公共契约快照。 */
 export type Disposer = () => void;
 export type ComponentLike<P = Record<string, never>> = (props: P) => unknown;
 
@@ -8,35 +8,48 @@ export interface ReactLike {
 }
 
 export interface WindowBounds { x: number; y: number; width: number; height: number }
-export interface WindowStateSnapshot { bounds: WindowBounds; state: string; scaleFactor: number }
-export interface WechatSample { bounds: WindowBounds; executable: string }
 
-export type ModelSourceKind = "engine" | "provider" | "default" | "custom" | "cache" | string;
-export interface CatalogModel { id: string; name?: string; capabilities?: string[] }
-export interface ModelProviderCatalog {
+/** 物理像素；宿主只操作 main 窗口，仅 normal 可设置。 */
+export interface PluginWindowSnapshot {
+  bounds: WindowBounds;
+  state: "normal" | "minimized" | "maximized" | "fullscreen";
+  scaleFactor: number;
+}
+export interface PluginWechatWindow { bounds: WindowBounds; executable: string }
+
+export interface PluginEngineModel {
+  id: string;
+  name?: string | null;
+  description?: string | null;
+  provider: string;
+  contextWindow?: number | null;
+}
+export type PluginModelSourceKind = "cli" | "official" | "provider" | "custom" | "configured" | "builtin";
+export interface PluginModelSource {
   id: string;
   name: string;
-  engine: string;
-  source: ModelSourceKind;
+  kind: PluginModelSourceKind;
   authoritative: boolean;
+  remote: boolean;
+  models: PluginEngineModel[];
   refreshedAt: number;
-  models: CatalogModel[];
   detail?: string;
-  modelCount?: number;
 }
-export interface HostCatalogEntry { engine: string; catalog: unknown }
-export interface CatalogSourceSummary {
-  engine: string;
-  kind: ModelSourceKind;
-  providerId?: string;
-  label?: string;
-  refreshed: number;
-  modelCount: number;
+export interface PluginEngineInfo {
+  id: string;
+  available: boolean;
+  enabled: boolean;
+  supportsImages: boolean;
+  supportsComputerUse: boolean;
+  supportsEffort: boolean;
+  supportsToolConstraints: boolean;
+  permissions: string[];
 }
+export interface PluginModelCatalogEngine { engine: PluginEngineInfo; sources: PluginModelSource[] }
+export interface PluginModelCatalogError { engine: string; sourceId?: string; message: string }
 export interface PluginModelCatalogResult {
-  engines: HostCatalogEntry[];
-  sources: CatalogSourceSummary[];
-  errors: Array<{ engine: string; source: "engine" | "provider"; providerId?: string; message: string }>;
+  engines: PluginModelCatalogEngine[];
+  errors: PluginModelCatalogError[];
   refreshedAt: number;
 }
 
@@ -46,9 +59,9 @@ export interface PluginContext {
   host: { locale: string; appVersion: string; sdkVersion: string; isWeb: boolean };
   storage: { get<T>(key: string): Promise<T | null>; set(key: string, value: unknown): Promise<void>; delete(key: string): Promise<void> };
   window: {
-    getState(): Promise<WindowStateSnapshot>;
-    setNormalBounds(bounds: WindowBounds): Promise<WindowStateSnapshot>;
-    sampleWechat(): Promise<WechatSample>;
+    getState(): Promise<PluginWindowSnapshot>;
+    setNormalBounds(bounds: WindowBounds): Promise<PluginWindowSnapshot>;
+    sampleWechat(): Promise<PluginWechatWindow>;
   };
   models: {
     catalog(options?: { workspace?: string; refreshProviders?: boolean }): Promise<PluginModelCatalogResult>;

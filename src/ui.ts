@@ -1,6 +1,6 @@
 import type { PluginContext, WindowBounds } from "./ccgui-plugin";
 import type { Copy } from "./i18n";
-import type { AssistantStore } from "./store";
+import type { AssistantStore, CatalogSourceRow } from "./store";
 
 type H = PluginContext["react"];
 
@@ -9,6 +9,7 @@ function boundsText(bounds: WindowBounds | null): string {
 }
 
 function formatTime(timestamp: number, locale: string): string {
+  if (!timestamp) return "—";
   try {
     return new Date(timestamp).toLocaleString(locale, { hour12: false });
   } catch {
@@ -16,21 +17,24 @@ function formatTime(timestamp: number, locale: string): string {
   }
 }
 
-function sourceLabel(t: Copy, source: string): string {
-  if (source === "cache") return t.sourceCache;
-  if (source === "engine") return t.sourceEngine;
-  if (source === "provider") return t.sourceProvider;
-  if (source === "default") return t.sourceDefault;
-  if (source === "custom") return t.sourceCustom;
-  if (source === "catalog") return t.sourceCatalog;
-  return source;
+function kindLabel(t: Copy, kind: CatalogSourceRow["kind"]): string {
+  switch (kind) {
+    case "cli": return t.sourceCli;
+    case "official": return t.sourceOfficial;
+    case "provider": return t.sourceProvider;
+    case "custom": return t.sourceCustom;
+    case "configured": return t.sourceConfigured;
+    case "builtin": return t.sourceBuiltin;
+    case "cache": return t.sourceCache;
+  }
 }
 
-function button(h: H, label: string, onClick: () => void, primary = false) {
+function button(h: H, label: string, onClick: () => void, primary = false, title?: string) {
   return h.createElement("button", {
     type: "button",
     className: primary ? "wma-button wma-button-primary" : "wma-button",
     onClick,
+    ...(title ? { title } : {}),
   }, label);
 }
 
@@ -38,24 +42,35 @@ export function makeAssistantView(ctx: PluginContext, store: AssistantStore, t: 
   const h = ctx.react;
   return function AssistantView() {
     const state = h.useSyncExternalStore(store.subscribe, store.getSnapshot);
-    const modelCount = state.providers.reduce((sum, provider) => sum + provider.models.length, 0);
-    const providerRows = state.providers.map((provider) => h.createElement(
+    const modelCount = state.groups.reduce((sum, group) => sum + group.sources.reduce((inner, source) => inner + source.models.length, 0), 0);
+
+    const groupRows = state.groups.map((group) => h.createElement(
       "section",
-      { className: "wma-provider", key: `${provider.engine}:${provider.id}` },
+      { className: "wma-provider", key: group.engine.id },
       h.createElement("div", { className: "wma-provider-head" },
-        h.createElement("strong", null, provider.name),
-        h.createElement("span", {
-          className: provider.source === "cache" ? "wma-badge wma-badge-warn" : "wma-badge wma-badge-ok",
-        }, provider.source === "cache" ? t.sourceCache : sourceLabel(t, provider.source)),
+        h.createElement("strong", null, group.engine.id),
+        group.engine.available ? null : h.createElement("span", { className: "wma-badge wma-badge-warn" }, t.engineUnavailable),
+        group.engine.enabled ? null : h.createElement("span", { className: "wma-badge wma-badge-warn" }, t.engineDisabled),
       ),
-      h.createElement("div", { className: "wma-meta" }, `${provider.engine} · ${sourceLabel(t, provider.source)}`),
-      h.createElement("div", { className: "wma-meta" }, `${t.refreshed}: ${formatTime(provider.refreshedAt, ctx.host.locale)}`),
-      provider.detail ? h.createElement("div", { className: "wma-warning" }, `${t.degraded}: ${provider.detail}`) : null,
-      h.createElement("ul", { className: "wma-model-list" }, ...provider.models.map((model) => h.createElement(
-        "li", { key: model.id, title: model.id },
-        h.createElement("span", { className: "wma-model-name" }, model.name || model.id),
-        model.name && model.name !== model.id ? h.createElement("code", null, model.id) : null,
-      ))),
+      ...group.sources.map((source) => h.createElement(
+        "div",
+        { className: "wma-source", key: source.id },
+        h.createElement("div", { className: "wma-provider-head" },
+          h.createElement("strong", null, source.name),
+          h.createElement("span", {
+            className: source.kind === "cache" ? "wma-badge wma-badge-warn" : "wma-badge wma-badge-ok",
+          }, kindLabel(t, source.kind)),
+        ),
+        h.createElement("div", { className: "wma-meta" },
+          `${source.id} · ${source.models.length} ${t.modelsCount} · ${source.remote ? t.remote : t.local}${source.authoritative ? ` · ${t.authoritativeMark}` : ""}`),
+        h.createElement("div", { className: "wma-meta" }, `${t.refreshed}: ${formatTime(source.refreshedAt, ctx.host.locale)}`),
+        source.detail ? h.createElement("div", { className: "wma-warning" }, source.detail) : null,
+        h.createElement("ul", { className: "wma-model-list" }, ...source.models.map((model) => h.createElement(
+          "li", { key: model.id, title: model.description ?? model.id },
+          h.createElement("span", { className: "wma-model-name" }, model.name || model.id),
+          model.name && model.name !== model.id ? h.createElement("code", null, model.id) : null,
+        ))),
+      )),
     ));
 
     return h.createElement("div", { className: "wma-panel" },
@@ -73,7 +88,7 @@ export function makeAssistantView(ctx: PluginContext, store: AssistantStore, t: 
           button(h, t.sampleWechat, () => void store.sampleWechat()),
           button(h, t.apply, () => void store.applyExpected(), true),
           button(h, t.saveExpected, () => void store.saveCurrentAsExpected()),
-          button(h, t.reset, () => void store.reset()),
+          button(h, t.reset, () => void store.reset(), false, t.suggested),
         ),
         h.createElement("label", { className: "wma-check" },
           h.createElement("input", {
@@ -91,9 +106,10 @@ export function makeAssistantView(ctx: PluginContext, store: AssistantStore, t: 
           button(h, t.refresh, () => void store.refreshModels(true)),
         ),
         h.createElement("p", { className: "wma-notice" }, t.availabilityNotice),
-        ...state.catalogErrors.map((message, index) => h.createElement("div", { className: "wma-warning", key: `${index}:${message}` }, message)),
-        state.providers.length === 0 && !state.busy ? h.createElement("div", { className: "wma-empty" }, t.noModels) : null,
-        ...providerRows,
+        h.createElement("p", { className: "wma-notice" }, t.authoritativeNotice),
+        ...state.catalogErrors.map((message, index) => h.createElement("div", { className: "wma-warning", key: `${index}:${message}` }, `${t.errorsTitle}: ${message}`)),
+        state.groups.length === 0 && !state.busy ? h.createElement("div", { className: "wma-empty" }, t.noModels) : null,
+        ...groupRows,
       ),
     );
   };
@@ -103,7 +119,7 @@ export function makeStatus(ctx: PluginContext, store: AssistantStore, t: Copy) {
   const h = ctx.react;
   return function StatusItem() {
     const state = h.useSyncExternalStore(store.subscribe, store.getSnapshot);
-    const count = state.providers.reduce((sum, provider) => sum + provider.models.length, 0);
+    const count = state.groups.reduce((sum, group) => sum + group.sources.reduce((inner, source) => inner + source.models.length, 0), 0);
     const text = `${state.autoRestore ? `${t.statusAuto} · ` : ""}${count} ${t.statusModels}`;
     return h.createElement("button", {
       type: "button",

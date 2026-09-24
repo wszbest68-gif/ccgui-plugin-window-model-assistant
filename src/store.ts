@@ -1,10 +1,29 @@
 import type {
-  CatalogSourceSummary,
-  ModelProviderCatalog,
   PluginContext,
+  PluginEngineInfo,
+  PluginEngineModel,
   PluginModelCatalogResult,
+  PluginModelSource,
+  PluginModelSourceKind,
   WindowBounds,
 } from "./ccgui-plugin";
+
+/** 插件展示层来源行：宿主每个 source 一行；内部 kind "cache" 仅标记本地缓存副本，不属于宿主契约。 */
+export interface CatalogSourceRow {
+  engineId: string;
+  id: string;
+  name: string;
+  kind: PluginModelSourceKind | "cache";
+  authoritative: boolean;
+  remote: boolean;
+  models: PluginEngineModel[];
+  refreshedAt: number;
+  detail?: string;
+}
+export interface CatalogEngineGroup {
+  engine: PluginEngineInfo;
+  sources: CatalogSourceRow[];
+}
 
 export interface AssistantState {
   loaded: boolean;
@@ -12,7 +31,7 @@ export interface AssistantState {
   currentBounds: WindowBounds | null;
   expectedBounds: WindowBounds | null;
   autoRestore: boolean;
-  providers: ModelProviderCatalog[];
+  groups: CatalogEngineGroup[];
   catalogErrors: string[];
   lastError: string | null;
 }
@@ -20,6 +39,7 @@ export interface AssistantState {
 interface PersistedSettings { expectedBounds: WindowBounds | null; autoRestore: boolean }
 const SETTINGS_KEY = "settings";
 const CATALOG_CACHE_KEY = "modelCatalogCache";
+/** 980x720 是建议初始值，并非微信窗口实测。 */
 export const WECHAT_LIKE_SIZE = { width: 980, height: 720 };
 
 function finite(value: unknown): value is number { return typeof value === "number" && Number.isFinite(value); }
@@ -32,65 +52,92 @@ export function suggestedBounds(current: WindowBounds): WindowBounds {
 }
 
 function asMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
-function asModels(value: unknown): Array<{ id: string; name?: string; capabilities?: string[] }> {
-  const source = Array.isArray(value) ? value : (value && typeof value === "object" ? (value as { models?: unknown; items?: unknown }).models ?? (value as { items?: unknown }).items : undefined);
-  if (!Array.isArray(source)) return [];
-  return source.flatMap((item) => {
-    if (typeof item === "string" && item.trim()) return [{ id: item }];
-    if (!item || typeof item !== "object") return [];
-    const row = item as { id?: unknown; name?: unknown; capabilities?: unknown };
-    if (typeof row.id !== "string" || !row.id) return [];
-    return [{ id: row.id, ...(typeof row.name === "string" ? { name: row.name } : {}), ...(Array.isArray(row.capabilities) ? { capabilities: row.capabilities.filter((x): x is string => typeof x === "string") } : {}) }];
-  });
+
+const SOURCE_KINDS: ReadonlySet<string> = new Set(["cli", "official", "provider", "custom", "configured", "builtin"]);
+
+/** 只保留契约字段，丢弃来源对象上可能出现的任何额外字段（如密钥、URL），防止敏感数据进入展示层与缓存。 */
+function pickModel(model: PluginEngineModel): PluginEngineModel {
+  return {
+    id: model.id,
+    ...(model.name != null ? { name: model.name } : {}),
+    ...(model.description != null ? { description: model.description } : {}),
+    provider: model.provider,
+    ...(model.contextWindow != null ? { contextWindow: model.contextWindow } : {}),
+  };
 }
 
-/** 将宿主安全 catalog DTO 转换为仅含展示字段的来源行；不推断鉴权或在线状态。 */
-export function normalizeCatalog(result: PluginModelCatalogResult): ModelProviderCatalog[] {
-  const rows: ModelProviderCatalog[] = [];
-  for (const entry of result.engines) {
-    const raw = entry.catalog as { models?: unknown; sources?: unknown } | null;
-    const models = asModels(raw?.models ?? entry.catalog);
-    const source = result.sources.find((item: CatalogSourceSummary) => item.engine === entry.engine);
-    rows.push({
-      id: source?.providerId ?? `${entry.engine}:engine`,
-      name: source?.label ?? entry.engine,
-      engine: entry.engine,
-      source: source?.kind ?? "engine",
-      authoritative: source?.kind !== "cache",
-      refreshedAt: source?.refreshed ?? result.refreshedAt,
-      models,
-      modelCount: source?.modelCount ?? models.length,
+function normalizeSource(engineId: string, source: PluginModelSource): CatalogSourceRow {
+  const seen = new Set<string>();
+  const models: PluginEngineModel[] = [];
+  for (const model of source.models ?? []) {
+    if (!model || typeof model.id !== "string" || !model.id || seen.has(model.id)) continue;
+    seen.add(model.id);
+    models.push(pickModel(model));
+  }
+  return {
+    engineId,
+    id: source.id,
+    name: source.name,
+    kind: SOURCE_KINDS.has(source.kind) ? source.kind : "custom",
+    authoritative: source.authoritative === true,
+    remote: source.remote === true,
+    models,
+    refreshedAt: finite(source.refreshedAt) ? source.refreshedAt : 0,
+    ...(source.detail ? { detail: source.detail } : {}),
+  };
+}
+
+/** 仅接受宿主最终契约 DTO：result.engines[].sources[].models。 */
+export function normalizeCatalog(result: PluginModelCatalogResult): CatalogEngineGroup[] {
+  if (!result || !Array.isArray(result.engines) || !Array.isArray(result.errors)) {
+    throw new Error("宿主模型目录 DTO 不符合契约");
+  }
+  return result.engines.map((entry) => ({
+    engine: entry.engine,
+    sources: (entry.sources ?? []).map((source) => normalizeSource(entry.engine.id, source)),
+  }));
+}
+
+/** 缓存副本：kind 强制 cache、authoritative 强制 false；仅供插件本地存储层使用，不回传宿主。 */
+function cacheRows(groups: CatalogEngineGroup[]): CatalogEngineGroup[] {
+  return groups.map((group) => ({
+    engine: group.engine,
+    sources: group.sources.map((source) => ({
+      ...source,
+      kind: "cache" as const,
+      authoritative: false,
+      detail: source.detail ?? "本地缓存副本，可能不是最新目录",
+    })),
+  }));
+}
+
+/** 读取持久化缓存时重新校验并强制 cache 语义，避免旧数据冒充实时来源。 */
+function sanitizeCache(raw: unknown): CatalogEngineGroup[] {
+  if (!Array.isArray(raw)) return [];
+  const groups: CatalogEngineGroup[] = [];
+  for (const item of raw) {
+    const group = item as CatalogEngineGroup | null;
+    if (!group || !group.engine || typeof group.engine.id !== "string" || !Array.isArray(group.sources)) continue;
+    groups.push({
+      engine: group.engine,
+      sources: group.sources.flatMap((source) => {
+        if (!source || typeof source.id !== "string" || typeof source.name !== "string") return [];
+        const row = normalizeSource(group.engine.id, { ...source, kind: "builtin", authoritative: false, remote: false });
+        return [{ ...row, kind: "cache" as const, authoritative: false, detail: source.detail ?? "本地缓存副本，可能不是最新目录" }];
+      }),
     });
   }
-  return rows;
+  return groups;
 }
 
-/** 合并宿主目录与缓存；缓存永远为非 authoritative，来源类型为 cache。 */
-export function mergeCatalogs(current: ModelProviderCatalog[], cached: ModelProviderCatalog[]): ModelProviderCatalog[] {
-  const map = new Map<string, ModelProviderCatalog>();
-  for (const provider of [...current, ...cached]) {
-    const key = `${provider.engine}:${provider.id}`;
-    const previous = map.get(key);
-    if (!previous || (provider.source !== "cache" && previous.source === "cache")) map.set(key, { ...provider, models: [...provider.models] });
-    else if (provider.source === "cache" && previous.source !== "cache") continue;
-    else {
-      const models = new Map(previous.models.map((model) => [model.id, model]));
-      for (const model of provider.models) models.set(model.id, model);
-      map.set(key, { ...previous, models: [...models.values()] });
-    }
-  }
-  return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
-}
-
-function cacheRows(providers: ModelProviderCatalog[]): ModelProviderCatalog[] {
-  return providers.map((provider) => ({ ...provider, source: "cache", authoritative: false, detail: provider.detail ?? "来源目录缓存副本" }));
+function formatErrors(result: PluginModelCatalogResult): string[] {
+  return result.errors.map((error) => `${error.engine}${error.sourceId ? `/${error.sourceId}` : ""}: ${error.message}`);
 }
 
 export class AssistantStore {
-  private state: AssistantState = { loaded: false, busy: false, currentBounds: null, expectedBounds: null, autoRestore: false, providers: [], catalogErrors: [], lastError: null };
+  private state: AssistantState = { loaded: false, busy: false, currentBounds: null, expectedBounds: null, autoRestore: false, groups: [], catalogErrors: [], lastError: null };
   private readonly listeners = new Set<() => void>();
   private disposed = false;
-  private latestEntries: PluginModelCatalogResult | null = null;
   constructor(private readonly ctx: PluginContext) {}
   readonly subscribe = (fn: () => void): (() => void) => { this.listeners.add(fn); return () => this.listeners.delete(fn); };
   readonly getSnapshot = (): AssistantState => this.state;
@@ -115,7 +162,10 @@ export class AssistantStore {
     try {
       const sampled = await this.ctx.window.sampleWechat();
       this.set({ expectedBounds: sampled.bounds, lastError: null });
-    } catch (error) { this.set({ lastError: asMessage(error) }); }
+    } catch (error) {
+      // 微信未运行或采样失败：原样透传宿主 Unsupported/NotFound 错误。
+      this.set({ lastError: asMessage(error) });
+    }
   }
 
   async applyExpected(): Promise<void> {
@@ -139,6 +189,7 @@ export class AssistantStore {
     catch (error) { this.set({ lastError: asMessage(error) }); }
   }
 
+  /** 恢复建议尺寸：保留当前 x/y，应用 980x720，并关闭 autoRestore、清除插件设置。 */
   async reset(): Promise<void> {
     try {
       const snapshot = await this.ctx.window.getState();
@@ -151,20 +202,22 @@ export class AssistantStore {
 
   async refreshModels(userRequested: boolean): Promise<void> {
     this.set({ busy: true, catalogErrors: [] });
-    let cached: ModelProviderCatalog[] = [];
-    try { cached = (await this.ctx.storage.get<ModelProviderCatalog[]>(CATALOG_CACHE_KEY)) ?? []; }
+    let cached: CatalogEngineGroup[] = [];
+    try { cached = sanitizeCache(await this.ctx.storage.get<unknown>(CATALOG_CACHE_KEY)); }
     catch (error) { this.set({ catalogErrors: [`缓存读取失败：${asMessage(error)}`] }); }
     try {
       const result = await this.ctx.models.catalog({ refreshProviders: userRequested });
-      this.latestEntries = result;
-      const providers = normalizeCatalog(result);
-      const errors = result.errors.map((error) => `${error.engine}${error.providerId ? `/${error.providerId}` : ""}: ${error.message}`);
-      const visible = mergeCatalogs(providers, cached);
-      if (providers.length > 0) await this.ctx.storage.set(CATALOG_CACHE_KEY, cacheRows(providers));
-      this.set({ providers: visible, catalogErrors: errors, lastError: null, busy: false });
+      const groups = normalizeCatalog(result);
+      const errors = formatErrors(result);
+      if (groups.some((group) => group.sources.length > 0)) {
+        await this.ctx.storage.set(CATALOG_CACHE_KEY, cacheRows(groups));
+      }
+      // 实时目录成功时只展示实时结果；缓存副本不得覆盖或混入。
+      this.set({ groups, catalogErrors: errors, lastError: null, busy: false });
     } catch (error) {
       const message = asMessage(error);
-      this.set({ providers: mergeCatalogs([], cached), catalogErrors: [`宿主模型目录失败，已降级到缓存：${message}`], lastError: message, busy: false });
+      // 实时失败：保留缓存目录并透明显示宿主错误。
+      this.set({ groups: cached, catalogErrors: [`宿主模型目录失败，已展示缓存副本：${message}`], lastError: message, busy: false });
     }
   }
 

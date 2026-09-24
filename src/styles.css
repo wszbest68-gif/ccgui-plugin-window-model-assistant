@@ -17,6 +17,7 @@
 .wma-error { background:var(--color-background-error-subtle,rgba(220,38,38,.12)); color:var(--color-text-error-default,#dc2626); }
 .wma-empty,.wma-meta { color:var(--color-text-tertiary,inherit); font-size:12px; }
 .wma-provider { display:flex; flex-direction:column; gap:3px; padding-top:8px; border-top:1px solid var(--color-separator-border,rgba(127,127,127,.2)); }
+.wma-source { display:flex; flex-direction:column; gap:3px; margin-top:6px; padding:6px; border-radius:6px; background:var(--color-background-secondary-default,rgba(127,127,127,.05)); }
 .wma-badge { flex:none; padding:1px 5px; border-radius:99px; font-size:10px; font-weight:600; }
 .wma-badge-ok { background:var(--color-background-success-subtle,rgba(22,163,74,.12)); color:var(--color-text-success-default,#15803d); }
 .wma-badge-warn { background:var(--color-background-warning-subtle,rgba(245,158,11,.12)); color:var(--color-text-warning-default,#a16207); }
