@@ -40,8 +40,14 @@ function button(h: H, label: string, onClick: () => void, primary = false, title
 
 export function makeAssistantView(ctx: PluginContext, store: AssistantStore, t: Copy) {
   const h = ctx.react;
-  return function AssistantView() {
+  return function AssistantView(props?: { workspacePath?: string }) {
     const state = h.useSyncExternalStore(store.subscribe, store.getSnapshot);
+    const workspacePath = props?.workspacePath ?? "";
+    h.useEffect(() => {
+      // 面板挂载即取得真实工作区路径；目录为空时用它兜底刷新一次
+      if (workspacePath) store.setWorkspace(workspacePath);
+      if (store.getSnapshot().groups.length === 0 && !store.getSnapshot().busy) void store.refreshModels(false);
+    }, [workspacePath]);
     const modelCount = state.groups.reduce((sum, group) => sum + group.sources.reduce((inner, source) => inner + source.models.length, 0), 0);
 
     const groupRows = state.groups.map((group) => h.createElement(
@@ -73,6 +79,29 @@ export function makeAssistantView(ctx: PluginContext, store: AssistantStore, t: 
       )),
     ));
 
+    const windowCardChildren = state.windowSupported
+      ? [
+          h.createElement("dl", { className: "wma-bounds", key: "bounds" },
+            h.createElement("dt", null, t.current), h.createElement("dd", null, boundsText(state.currentBounds)),
+            h.createElement("dt", null, t.expected), h.createElement("dd", null, boundsText(state.expectedBounds)),
+          ),
+          h.createElement("div", { className: "wma-actions", key: "actions" },
+            button(h, t.sampleWechat, () => void store.sampleWechat()),
+            button(h, t.apply, () => void store.applyExpected(), true),
+            button(h, t.saveExpected, () => void store.saveCurrentAsExpected()),
+            button(h, t.reset, () => void store.reset(), false, t.suggested),
+          ),
+          h.createElement("label", { className: "wma-check", key: "autorestore" },
+            h.createElement("input", {
+              type: "checkbox",
+              checked: state.autoRestore,
+              onChange: (event: { target: { checked: boolean } }) => void store.setAutoRestore(event.target.checked),
+            }),
+            t.autoRestore,
+          ),
+        ]
+      : [h.createElement("p", { className: "wma-notice", key: "unsupported" }, t.windowUnsupported)];
+
     return h.createElement("div", { className: "wma-panel" },
       h.createElement("header", { className: "wma-header" },
         h.createElement("h2", null, t.title),
@@ -80,24 +109,7 @@ export function makeAssistantView(ctx: PluginContext, store: AssistantStore, t: 
       ),
       h.createElement("section", { className: "wma-card" },
         h.createElement("h3", null, t.windowTitle),
-        h.createElement("dl", { className: "wma-bounds" },
-          h.createElement("dt", null, t.current), h.createElement("dd", null, boundsText(state.currentBounds)),
-          h.createElement("dt", null, t.expected), h.createElement("dd", null, boundsText(state.expectedBounds)),
-        ),
-        h.createElement("div", { className: "wma-actions" },
-          button(h, t.sampleWechat, () => void store.sampleWechat()),
-          button(h, t.apply, () => void store.applyExpected(), true),
-          button(h, t.saveExpected, () => void store.saveCurrentAsExpected()),
-          button(h, t.reset, () => void store.reset(), false, t.suggested),
-        ),
-        h.createElement("label", { className: "wma-check" },
-          h.createElement("input", {
-            type: "checkbox",
-            checked: state.autoRestore,
-            onChange: (event: { target: { checked: boolean } }) => void store.setAutoRestore(event.target.checked),
-          }),
-          t.autoRestore,
-        ),
+        ...windowCardChildren,
       ),
       state.lastError ? h.createElement("div", { className: "wma-error", role: "alert" }, `${t.error}: ${state.lastError}`) : null,
       h.createElement("section", { className: "wma-card" },

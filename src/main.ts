@@ -7,7 +7,7 @@ import { makeAssistantView, makeStatus } from "./ui";
 const activate: PluginActivate = (ctx) => {
   const disposers: Disposer[] = [];
   const t = copy(ctx.host.locale);
-  const store = new AssistantStore(ctx);
+  const store = new AssistantStore(ctx, t);
   const view = makeAssistantView(ctx, store, t);
 
   // 激活同步返回；异步初始化不阻塞插件加载。

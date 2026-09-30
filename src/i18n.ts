@@ -10,6 +10,7 @@ export interface Copy {
   saveExpected: string;
   autoRestore: string;
   reset: string;
+  windowUnsupported: string;
   modelsTitle: string;
   refresh: string;
   loading: string;
@@ -51,6 +52,7 @@ const zh: Copy = {
   saveExpected: "保存为预期",
   autoRestore: "启动时自动恢复",
   reset: "恢复建议尺寸",
+  windowUnsupported: "当前宿主版本不支持窗口管理能力（该能力随宿主新版提供）；模型目录功能不受影响。",
   modelsTitle: "模型目录",
   refresh: "刷新",
   loading: "正在读取宿主模型目录…",
@@ -84,6 +86,7 @@ const en: Copy = {
   tab: "Window & Models", settings: "Window & Model Assistant", title: "Window & Model Assistant",
   windowTitle: "Main window", current: "Current", expected: "Expected", sampleWechat: "Sample WeChat window",
   apply: "Apply", saveExpected: "Save as expected", autoRestore: "Restore automatically on startup", reset: "Restore suggested size",
+  windowUnsupported: "Window management is not supported by this host build (it ships with a newer host); the model catalog below is unaffected.",
   modelsTitle: "Model catalog", refresh: "Refresh", loading: "Reading the host model catalog…", noModels: "No models returned by host.",
   sourceCli: "CLI catalog", sourceOfficial: "Official config", sourceProvider: "Provider config", sourceCustom: "Custom models",
   sourceConfigured: "Default config", sourceBuiltin: "Host built-in", sourceCache: "Cache copy",

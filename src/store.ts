@@ -1,12 +1,14 @@
 import type {
+  PluginAgentCatalogEntry,
   PluginContext,
   PluginEngineInfo,
   PluginEngineModel,
-  PluginModelCatalogResult,
   PluginModelSource,
   PluginModelSourceKind,
   WindowBounds,
 } from "./ccgui-plugin";
+import type { Copy } from "./i18n";
+import { copy as resolveCopy } from "./i18n";
 
 /** 插件展示层来源行：宿主每个 source 一行；内部 kind "cache" 仅标记本地缓存副本，不属于宿主契约。 */
 export interface CatalogSourceRow {
@@ -28,12 +30,14 @@ export interface CatalogEngineGroup {
 export interface AssistantState {
   loaded: boolean;
   busy: boolean;
+  windowSupported: boolean;
   currentBounds: WindowBounds | null;
   expectedBounds: WindowBounds | null;
   autoRestore: boolean;
   groups: CatalogEngineGroup[];
   catalogErrors: string[];
   lastError: string | null;
+  workspace: string;
 }
 
 interface PersistedSettings { expectedBounds: WindowBounds | null; autoRestore: boolean }
@@ -87,15 +91,52 @@ function normalizeSource(engineId: string, source: PluginModelSource): CatalogSo
   };
 }
 
-/** 仅接受宿主最终契约 DTO：result.engines[].sources[].models。 */
-export function normalizeCatalog(result: PluginModelCatalogResult): CatalogEngineGroup[] {
-  if (!result || !Array.isArray(result.engines) || !Array.isArray(result.errors)) {
-    throw new Error("宿主模型目录 DTO 不符合契约");
+/** 缓存副本：kind 强制 cache、authoritative 强制 false；仅供插件本地存储层使用，不回传宿主。 */
+
+/**
+ * 官方 agent.catalog（SDK 0.3.14）降级适配：引擎级平铺模型映射为每引擎一个
+ * 「宿主引擎目录」来源行；providers 只作 detail 展示（目录不含逐模型渠道归属）。
+ * 禁用的引擎官方不返回，故 enabled 恒 true；supports* 等能力位本目录不承诺，置 false。
+ */
+export function adaptAgentCatalog(list: PluginAgentCatalogEntry[]): CatalogEngineGroup[] {
+  const groups: CatalogEngineGroup[] = [];
+  for (const entry of Array.isArray(list) ? list : []) {
+    if (!entry || typeof entry.engine !== "string" || !entry.engine) continue;
+    const providerNames = (entry.providers ?? []).map((p) => p.label || p.id).filter(Boolean).join(" / ");
+    const seen = new Set<string>();
+    const models: PluginEngineModel[] = [];
+    for (const m of entry.models ?? []) {
+      if (!m || typeof m.id !== "string" || !m.id || seen.has(m.id)) continue;
+      seen.add(m.id);
+      models.push({ id: m.id, name: m.label || m.id, provider: entry.providers?.[0]?.id || entry.engine });
+    }
+    groups.push({
+      engine: {
+        id: entry.engine,
+        available: entry.available !== false,
+        enabled: true,
+        supportsImages: false,
+        supportsComputerUse: false,
+        supportsEffort: false,
+        supportsToolConstraints: false,
+        permissions: [],
+      },
+      sources: models.length
+        ? [{
+            engineId: entry.engine,
+            id: "agent-catalog",
+            name: entry.label || entry.engine,
+            kind: "builtin",
+            authoritative: true,
+            remote: false,
+            models,
+            refreshedAt: Date.now(),
+            ...(providerNames ? { detail: `服务商：${providerNames}` } : {}),
+          }]
+        : [],
+    });
   }
-  return result.engines.map((entry) => ({
-    engine: entry.engine,
-    sources: (entry.sources ?? []).map((source) => normalizeSource(entry.engine.id, source)),
-  }));
+  return groups;
 }
 
 /** 缓存副本：kind 强制 cache、authoritative 强制 false；仅供插件本地存储层使用，不回传宿主。 */
@@ -130,37 +171,56 @@ function sanitizeCache(raw: unknown): CatalogEngineGroup[] {
   return groups;
 }
 
-function formatErrors(result: PluginModelCatalogResult): string[] {
-  return result.errors.map((error) => `${error.engine}${error.sourceId ? `/${error.sourceId}` : ""}: ${error.message}`);
-}
-
 export class AssistantStore {
-  private state: AssistantState = { loaded: false, busy: false, currentBounds: null, expectedBounds: null, autoRestore: false, groups: [], catalogErrors: [], lastError: null };
+  private state: AssistantState;
   private readonly listeners = new Set<() => void>();
   private disposed = false;
-  constructor(private readonly ctx: PluginContext) {}
+  private readonly copy: Copy;
+  constructor(private readonly ctx: PluginContext, copy?: Copy) {
+    this.copy = copy ?? resolveCopy(ctx.host.locale);
+    // 窗口/完整模型目录是候选能力：官方宿主未发布时为 undefined，同步探测一次即可
+    const windowSupported = !!ctx.window && typeof ctx.window.getState === "function";
+    this.state = {
+      loaded: false, busy: false, windowSupported,
+      currentBounds: null, expectedBounds: null, autoRestore: false,
+      groups: [], catalogErrors: [], lastError: null, workspace: "",
+    };
+  }
   readonly subscribe = (fn: () => void): (() => void) => { this.listeners.add(fn); return () => this.listeners.delete(fn); };
   readonly getSnapshot = (): AssistantState => this.state;
   private set(patch: Partial<AssistantState>): void { if (this.disposed) return; this.state = { ...this.state, ...patch }; for (const listener of this.listeners) listener(); }
 
+  setWorkspace(workspace: string): void {
+    if (typeof workspace === "string" && workspace && workspace !== this.state.workspace) this.set({ workspace });
+  }
+
+  private windowApi() {
+    return this.state.windowSupported ? this.ctx.window ?? null : null;
+  }
+
   async init(): Promise<void> {
-    try {
-      const [settings, snapshot] = await Promise.all([this.ctx.storage.get<PersistedSettings>(SETTINGS_KEY), this.ctx.window.getState()]);
-      const expected = validBounds(settings?.expectedBounds) ? settings.expectedBounds : suggestedBounds(snapshot.bounds);
-      const autoRestore = settings?.autoRestore === true;
-      this.set({ currentBounds: snapshot.bounds, expectedBounds: expected, autoRestore });
-      if (autoRestore) {
-        const restored = await this.ctx.window.setNormalBounds(expected);
-        this.set({ currentBounds: restored.bounds });
-      }
-    } catch (error) { this.set({ lastError: asMessage(error) }); }
+    const windowApi = this.windowApi();
+    if (windowApi) {
+      try {
+        const [settings, snapshot] = await Promise.all([this.ctx.storage.get<PersistedSettings>(SETTINGS_KEY), windowApi.getState()]);
+        const expected = validBounds(settings?.expectedBounds) ? settings.expectedBounds : suggestedBounds(snapshot.bounds);
+        const autoRestore = settings?.autoRestore === true;
+        this.set({ currentBounds: snapshot.bounds, expectedBounds: expected, autoRestore });
+        if (autoRestore) {
+          const restored = await windowApi.setNormalBounds(expected);
+          this.set({ currentBounds: restored.bounds });
+        }
+      } catch (error) { this.set({ lastError: asMessage(error) }); }
+    }
     await this.refreshModels(false);
     this.set({ loaded: true });
   }
 
   async sampleWechat(): Promise<void> {
+    const windowApi = this.windowApi();
+    if (!windowApi) { this.set({ lastError: this.copy.windowUnsupported }); return; }
     try {
-      const sampled = await this.ctx.window.sampleWechat();
+      const sampled = await windowApi.sampleWechat();
       this.set({ expectedBounds: sampled.bounds, lastError: null });
     } catch (error) {
       // 微信未运行或采样失败：原样透传宿主 Unsupported/NotFound 错误。
@@ -169,51 +229,63 @@ export class AssistantStore {
   }
 
   async applyExpected(): Promise<void> {
+    const windowApi = this.windowApi();
+    if (!windowApi) { this.set({ lastError: this.copy.windowUnsupported }); return; }
     if (!this.state.expectedBounds) return;
     try {
-      const snapshot = await this.ctx.window.setNormalBounds(this.state.expectedBounds);
+      const snapshot = await windowApi.setNormalBounds(this.state.expectedBounds);
       this.set({ currentBounds: snapshot.bounds, lastError: null });
     } catch (error) { this.set({ lastError: asMessage(error) }); }
   }
 
   async saveCurrentAsExpected(): Promise<void> {
+    const windowApi = this.windowApi();
+    if (!windowApi) { this.set({ lastError: this.copy.windowUnsupported }); return; }
     try {
-      const snapshot = await this.ctx.window.getState();
+      const snapshot = await windowApi.getState();
       await this.persist({ expectedBounds: snapshot.bounds, autoRestore: this.state.autoRestore });
       this.set({ currentBounds: snapshot.bounds, expectedBounds: snapshot.bounds, lastError: null });
     } catch (error) { this.set({ lastError: asMessage(error) }); }
   }
 
   async setAutoRestore(autoRestore: boolean): Promise<void> {
+    if (!this.windowApi()) { this.set({ lastError: this.copy.windowUnsupported }); return; }
     try { await this.persist({ expectedBounds: this.state.expectedBounds, autoRestore }); this.set({ autoRestore, lastError: null }); }
     catch (error) { this.set({ lastError: asMessage(error) }); }
   }
 
   /** 恢复建议尺寸：保留当前 x/y，应用 980x720，并关闭 autoRestore、清除插件设置。 */
   async reset(): Promise<void> {
+    const windowApi = this.windowApi();
+    if (!windowApi) { this.set({ lastError: this.copy.windowUnsupported }); return; }
     try {
-      const snapshot = await this.ctx.window.getState();
+      const snapshot = await windowApi.getState();
       const expectedBounds = suggestedBounds(snapshot.bounds);
-      const applied = await this.ctx.window.setNormalBounds(expectedBounds);
+      const applied = await windowApi.setNormalBounds(expectedBounds);
       await this.ctx.storage.delete(SETTINGS_KEY);
       this.set({ currentBounds: applied.bounds, expectedBounds, autoRestore: false, lastError: null });
     } catch (error) { this.set({ lastError: asMessage(error) }); }
   }
 
   async refreshModels(userRequested: boolean): Promise<void> {
+    // userRequested 预留给未来的完整目录 API（refreshProviders 仅该 API 支持）；当前 agent 路径不接受该参数。
+    void userRequested;
     this.set({ busy: true, catalogErrors: [] });
     let cached: CatalogEngineGroup[] = [];
     try { cached = sanitizeCache(await this.ctx.storage.get<unknown>(CATALOG_CACHE_KEY)); }
     catch (error) { this.set({ catalogErrors: [`缓存读取失败：${asMessage(error)}`] }); }
     try {
-      const result = await this.ctx.models.catalog({ refreshProviders: userRequested });
-      const groups = normalizeCatalog(result);
-      const errors = formatErrors(result);
-      if (groups.some((group) => group.sources.length > 0)) {
-        await this.ctx.storage.set(CATALOG_CACHE_KEY, cacheRows(groups));
+      // 官方 agent 目录（SDK 0.3.14 起，权限 agent）。
+      // 注：完整多来源目录 API（host:models）尚未合入上游宿主；合入后由后续版本启用。
+      if (this.ctx.agent && typeof this.ctx.agent.catalog === "function") {
+        const groups = adaptAgentCatalog(await this.ctx.agent.catalog(this.state.workspace || ""));
+        if (groups.some((group) => group.sources.length > 0)) {
+          await this.ctx.storage.set(CATALOG_CACHE_KEY, cacheRows(groups));
+        }
+        this.set({ groups, catalogErrors: [], lastError: null, busy: false });
+        return;
       }
-      // 实时目录成功时只展示实时结果；缓存副本不得覆盖或混入。
-      this.set({ groups, catalogErrors: errors, lastError: null, busy: false });
+      throw new Error("no catalog capability on this host");
     } catch (error) {
       const message = asMessage(error);
       // 实时失败：保留缓存目录并透明显示宿主错误。

@@ -1,69 +1,62 @@
 import { describe, expect, it } from "vitest";
 import type {
+  PluginAgentCatalogEntry,
   PluginContext,
-  PluginEngineInfo,
-  PluginModelCatalogEngine,
-  PluginModelCatalogResult,
-  PluginModelSource,
-  PluginModelSourceKind,
   WindowBounds,
 } from "./ccgui-plugin";
-import { AssistantStore, normalizeCatalog, suggestedBounds } from "./store";
+import { adaptAgentCatalog, AssistantStore, suggestedBounds } from "./store";
 
 const bounds: WindowBounds = { x: 30, y: 40, width: 800, height: 600 };
 
-function engineInfo(id: string, patch?: Partial<PluginEngineInfo>): PluginEngineInfo {
-  return {
-    id, available: true, enabled: true, supportsImages: false, supportsComputerUse: false,
-    supportsEffort: false, supportsToolConstraints: false, permissions: [], ...patch,
-  };
-}
-function source(id: string, kind: PluginModelSourceKind, models: string[], patch?: Partial<PluginModelSource>): PluginModelSource {
-  return {
-    id, name: id, kind, authoritative: kind === "cli", remote: kind === "provider",
-    models: models.map((model) => ({ id: model, provider: "p" })), refreshedAt: 200, ...patch,
-  };
-}
-function entry(engineId: string, sources: PluginModelSource[]): PluginModelCatalogEngine {
-  return { engine: engineInfo(engineId), sources };
-}
-function result(engines: PluginModelCatalogEngine[], errors: PluginModelCatalogResult["errors"] = []): PluginModelCatalogResult {
-  return { engines, errors, refreshedAt: 200 };
-}
-
 function fakeContext(options?: {
-  catalogError?: Error;
-  catalogResult?: PluginModelCatalogResult;
   cached?: unknown;
   wechatError?: Error;
+  /** 模拟官方宿主：无候选 window 能力 */
+  noWindow?: boolean;
+  /** 模拟极旧宿主：无 agent 能力 */
+  noAgent?: boolean;
+  agentCatalog?: PluginAgentCatalogEntry[];
+  agentError?: Error;
 }) {
   const values = new Map<string, unknown>();
   if (options?.cached !== undefined) values.set("modelCatalogCache", options.cached);
   let current = bounds;
-  const calls: Array<{ refreshProviders?: boolean }> = [];
-  const ctx = {
+  const agentCalls: string[] = [];
+  const ctx: Record<string, unknown> = {
+    host: { locale: "zh-CN", appVersion: "1.1.0", sdkVersion: "0.3.15", isWeb: false },
     storage: {
       get: async <T,>(key: string) => (values.get(key) as T | undefined) ?? null,
       set: async (key: string, value: unknown) => { values.set(key, value); },
       delete: async (key: string) => { values.delete(key); },
     },
-    window: {
+  };
+  if (!options?.noWindow) {
+    ctx.window = {
       getState: async () => ({ bounds: current, state: "normal" as const, scaleFactor: 1 }),
       setNormalBounds: async (next: WindowBounds) => { current = next; return { bounds: next, state: "normal" as const, scaleFactor: 1 }; },
       sampleWechat: async () => {
         if (options?.wechatError) throw options.wechatError;
         return { bounds: { x: 10, y: 20, width: 1100, height: 800 }, executable: "WeChat.exe" };
       },
-    },
-    models: {
-      catalog: async (opts?: { workspace?: string; refreshProviders?: boolean }) => {
-        calls.push({ refreshProviders: opts?.refreshProviders });
-        if (options?.catalogError) throw options.catalogError;
-        return options?.catalogResult ?? result([entry("codex", [source("cli", "cli", ["gpt-5"])])]);
+    };
+  }
+  if (!options?.noAgent) {
+    ctx.agent = {
+      catalog: async (workspacePath: string) => {
+        agentCalls.push(workspacePath);
+        if (options?.agentError) throw options.agentError;
+        return options?.agentCatalog ?? [];
       },
-    },
+    };
+  }
+  return { ctx: ctx as unknown as PluginContext, values, agentCalls };
+}
+
+function agentEntry(engine: string, models: string[], patch?: Partial<PluginAgentCatalogEntry>): PluginAgentCatalogEntry {
+  return {
+    engine, label: engine, available: true, readOnly: false,
+    providers: [], models: models.map((id) => ({ id, label: id })), ...patch,
   };
-  return { ctx: ctx as unknown as PluginContext, values, calls };
 }
 
 describe("窗口建议尺寸", () => {
@@ -78,86 +71,95 @@ describe("窗口建议尺寸", () => {
   });
 });
 
-describe("normalizeCatalog", () => {
-  it("按 source 分组：一个引擎的多个来源各自成行", () => {
-    const groups = normalizeCatalog(result([
-      entry("codex", [source("cli", "cli", ["gpt-5"]), source("cfg", "configured", ["gpt-4"])]),
-    ]));
-    expect(groups).toHaveLength(1);
-    expect(groups[0].sources.map((row) => row.id)).toEqual(["cli", "cfg"]);
-    expect(groups[0].sources[0]).toMatchObject({ kind: "cli", authoritative: true });
-    expect(groups[0].sources[1]).toMatchObject({ kind: "configured", authoritative: false });
+describe("窗口候选能力缺失（官方宿主）", () => {
+  it("init 不触碰窗口 API 且 windowSupported=false", async () => {
+    const { ctx } = fakeContext({ noWindow: true });
+    const store = new AssistantStore(ctx);
+    await store.init();
+    const state = store.getSnapshot();
+    expect(state.loaded).toBe(true);
+    expect(state.windowSupported).toBe(false);
+    expect(state.currentBounds).toBeNull();
+    expect(state.lastError).toBeNull();
   });
-  it("保留 remote 来源标记", () => {
-    const groups = normalizeCatalog(result([entry("codex", [source("remote-p", "provider", ["m"], { remote: true })])]));
-    expect(groups[0].sources[0].remote).toBe(true);
-  });
-  it("同一 source 内按 id 去重", () => {
-    const groups = normalizeCatalog(result([entry("codex", [source("cli", "cli", ["a", "a", "b"])])]));
-    expect(groups[0].sources[0].models.map((model) => model.id)).toEqual(["a", "b"]);
-  });
-  it("拒绝不符合契约的 DTO", () => {
-    expect(() => normalizeCatalog({ sources: [] } as unknown as PluginModelCatalogResult)).toThrow();
+  it("窗口操作守卫：不支持时写入友好错误且不抛异常", async () => {
+    const { ctx } = fakeContext({ noWindow: true });
+    const store = new AssistantStore(ctx);
+    await store.applyExpected();
+    expect(store.getSnapshot().lastError).toContain("不支持窗口管理");
+    await store.reset();
+    expect(store.getSnapshot().lastError).toContain("不支持窗口管理");
   });
 });
 
-describe("refreshModels", () => {
-  it("init 用 refreshProviders:false，用户刷新用 true", async () => {
-    const { ctx, calls } = fakeContext();
+describe("adaptAgentCatalog（官方 agent 目录适配）", () => {
+  const sample: PluginAgentCatalogEntry[] = [
+    agentEntry("kimi", ["k3", "k3", "k2"], { label: "Kimi", providers: [{ id: "p1", label: "官方" }] }),
+    agentEntry("dsh", [], { available: false }),
+  ];
+  it("引擎级平铺模型映射为单来源行并按 id 去重", () => {
+    const groups = adaptAgentCatalog(sample);
+    expect(groups).toHaveLength(2);
+    expect(groups[0].engine).toMatchObject({ id: "kimi", available: true, enabled: true });
+    expect(groups[0].sources[0]).toMatchObject({ id: "agent-catalog", kind: "builtin", authoritative: true });
+    expect(groups[0].sources[0].models.map((m) => m.id)).toEqual(["k3", "k2"]);
+    expect(groups[0].sources[0].models[0]).toMatchObject({ name: "k3", provider: "p1" });
+  });
+  it("无模型的引擎保留空 sources；不可用时透传 available=false", () => {
+    const groups = adaptAgentCatalog(sample);
+    expect(groups[1].engine.available).toBe(false);
+    expect(groups[1].sources).toEqual([]);
+  });
+});
+
+describe("refreshModels（agent 路径）", () => {
+  it("init 与用户刷新均调用 agent.catalog，传入已知工作区", async () => {
+    const { ctx, agentCalls } = fakeContext({ agentCatalog: [agentEntry("codex", ["gpt-6"])] });
     const store = new AssistantStore(ctx);
+    store.setWorkspace("D:/ws");
     await store.init();
     await store.refreshModels(true);
-    expect(calls.map((call) => call.refreshProviders)).toEqual([false, true]);
-  });
-  it("透传 per-engine 与 per-source 错误", async () => {
-    const catalogResult = result(
-      [entry("codex", [source("cli", "cli", ["gpt-5"])])],
-      [
-        { engine: "claude", message: "engine not available" },
-        { engine: "codex", sourceId: "remote-p", message: "provider timeout" },
-      ],
-    );
-    const { ctx } = fakeContext({ catalogResult });
-    const store = new AssistantStore(ctx);
-    await store.refreshModels(false);
-    const errors = store.getSnapshot().catalogErrors;
-    expect(errors).toContain("claude: engine not available");
-    expect(errors).toContain("codex/remote-p: provider timeout");
-    expect(store.getSnapshot().groups[0].sources[0].models).toHaveLength(1);
+    expect(agentCalls).toEqual(["D:/ws", "D:/ws"]);
+    expect(store.getSnapshot().groups[0].sources[0].models.map((m) => m.id)).toEqual(["gpt-6"]);
+    expect(store.getSnapshot().catalogErrors).toEqual([]);
   });
   it("实时成功时缓存不混入展示", async () => {
-    const cached = [{ engine: engineInfo("old"), sources: [{ engineId: "old", id: "c", name: "c", kind: "cache", authoritative: false, remote: false, models: [{ id: "stale", provider: "p" }], refreshedAt: 1 }] }];
-    const { ctx } = fakeContext({ cached });
+    const cached = [{ engine: { id: "old" }, sources: [{ engineId: "old", id: "c", name: "c", kind: "cache", authoritative: false, remote: false, models: [{ id: "stale", provider: "p" }], refreshedAt: 1 }] }];
+    const { ctx } = fakeContext({ cached, agentCatalog: [agentEntry("codex", ["gpt-6"])] });
     const store = new AssistantStore(ctx);
     await store.refreshModels(false);
     expect(store.getSnapshot().groups.map((group) => group.engine.id)).toEqual(["codex"]);
   });
-  it("实时失败时降级缓存副本并显示宿主错误", async () => {
-    const cached = [{ engine: engineInfo("codex"), sources: [{ engineId: "codex", id: "cli", name: "CLI", kind: "cli", authoritative: true, remote: false, models: [{ id: "gpt-4", provider: "p" }], refreshedAt: 1 }] }];
-    const { ctx } = fakeContext({ catalogError: new Error("offline"), cached });
+  it("实时失败时降级缓存副本并显示错误", async () => {
+    const cached = [{ engine: { id: "codex" }, sources: [{ engineId: "codex", id: "cli", name: "CLI", kind: "cli", authoritative: true, remote: false, models: [{ id: "gpt-4", provider: "p" }], refreshedAt: 1 }] }];
+    const { ctx } = fakeContext({ agentError: new Error("offline"), cached });
     const store = new AssistantStore(ctx);
     await store.refreshModels(false);
     const row = store.getSnapshot().groups[0].sources[0];
     expect(row).toMatchObject({ kind: "cache", authoritative: false });
     expect(store.getSnapshot().catalogErrors[0]).toContain("offline");
   });
+  it("宿主无 agent 能力时明确报错并降级缓存", async () => {
+    const { ctx } = fakeContext({ noAgent: true });
+    const store = new AssistantStore(ctx);
+    await store.refreshModels(false);
+    expect(store.getSnapshot().catalogErrors[0]).toContain("no catalog capability");
+  });
   it("写入缓存时强制 kind=cache 且 authoritative=false", async () => {
-    const { ctx, values } = fakeContext();
+    const { ctx, values } = fakeContext({ agentCatalog: [agentEntry("codex", ["gpt-6"])] });
     const store = new AssistantStore(ctx);
     await store.refreshModels(false);
     const cached = values.get("modelCatalogCache") as Array<{ sources: Array<{ kind: string; authoritative: boolean }> }>;
     expect(cached[0].sources[0]).toMatchObject({ kind: "cache", authoritative: false });
   });
   it("缓存不保留契约外敏感字段", async () => {
-    const dirty = source("cli", "cli", ["gpt-5"]);
-    (dirty.models[0] as unknown as Record<string, unknown>).apiKey = "sk-secret";
-    (dirty as unknown as Record<string, unknown>).baseUrl = "https://internal.example";
-    const { ctx, values } = fakeContext({ catalogResult: result([entry("codex", [dirty])]) });
+    const dirty = agentEntry("codex", ["gpt-6"]);
+    (dirty as unknown as Record<string, unknown>).apiKey = "sk-secret";
+    const { ctx, values } = fakeContext({ agentCatalog: [dirty] });
     const store = new AssistantStore(ctx);
     await store.refreshModels(false);
     const serialized = JSON.stringify(values.get("modelCatalogCache"));
     expect(serialized).not.toContain("sk-secret");
-    expect(serialized).not.toContain("internal.example");
   });
 });
 
