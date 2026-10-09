@@ -6,8 +6,8 @@ CC GUI 插件：管理 **CC GUI 主窗口**的位置与大小（依赖宿主新�
 
 - 记住并恢复主窗口位置与大小；首次提供 `980×720` 的建议初始尺寸（**建议值，并非微信实测**），由宿主按显示器可用区域钳制。
 - 采样当前微信主窗口、应用预期值、保存当前值、启动自动恢复、恢复建议尺寸；微信未运行或采样失败时原样展示宿主 Unsupported/NotFound 错误。
-- **能力探测与优雅降级**：窗口管理是宿主候选能力——官方宿主未提供时，窗口卡片明确提示「当前宿主版本不支持窗口管理能力」，不会报错或崩溃，其余功能不受影响。
-- 模型目录：通过官方 `agent` 能力按引擎展示目录（`builtin` 来源）；激活时不出网，仅用户点击「刷新」才触发读取。多来源完整目录 API（`host:models`）尚未合入上游宿主，合入后由后续版本启用。
+- **官方窗口能力**：CC GUI 1.1.2 起通过 `host:window` / `ctx.window` 读取和设置窗口；能力探测仍保留，避免异常宿主导致插件崩溃。
+- 模型目录：通过官方 `agent` 能力按引擎展示目录（`builtin` 来源）；激活时不出网，仅用户点击「刷新」才触发读取。
 - 实时读取失败时保留并展示本地缓存副本（强制 `authoritative=false`、标记「缓存副本」），并透明显示宿主返回的脱敏错误。
 - 每个来源明确标注：目录存在**不代表**鉴权、订阅权益、额度或真实调用已验证；`authoritative` 仅表示该来源可解析出闭合模型集合，不代表账号可用。
 - 简体中文默认并支持英文；适配窄右侧面板和宿主浅色/深色语义 token。
@@ -16,10 +16,10 @@ CC GUI 插件：管理 **CC GUI 主窗口**的位置与大小（依赖宿主新�
 
 ## 宿主兼容性
 
-面向官方宿主 `>=1.0.9`、插件 SDK `^0.3.14`：
+面向官方宿主 `>=1.1.2`、插件 SDK `^0.3.19`：
 
 - 模型目录（降级路径）依赖官方 `agent.catalog`（SDK 0.3.14 起，权限 `agent`）。
-- 窗口管理与多来源完整目录依赖宿主新版候选能力（`host:window` / `host:models` 权限与对应 API 合入上游并随宿主发布后自动启用，无需升级本插件）。
+- 窗口管理依赖官方 `host:window` 权限与 `ctx.window` API（SDK 0.3.19 起）。
 
 ## 开发
 
@@ -33,11 +33,11 @@ npm run checksums
 
 ## 发布
 
-创建与 `manifest.json` 版本完全一致且不带 `v` 前缀的 tag（如 `0.1.2`）。GitHub Actions 会运行类型检查、单测、构建、manifest 校验并生成 SHA-256 `checksums.txt` 后发布四个安装文件。
+创建与 `manifest.json` 版本完全一致且不带 `v` 前缀的 tag（如 `0.1.3`）。GitHub Actions 会运行类型检查、单测、构建、manifest 校验并生成 SHA-256 `checksums.txt` 后发布四个安装文件。
 
 ## 权限
 
-`agent`（引擎/模型目录降级读取）、`storage`、`ui:panel-tab`、`ui:settings-section`、`ui:command`、`ui:status-bar`、`i18n`。
+`agent`（引擎/模型目录读取）、`storage`、`ui:panel-tab`、`ui:settings-section`、`ui:command`、`ui:status-bar`、`i18n`、`host:window`（主窗口读取/设置与微信窗口采样）。
 
 ## License
 

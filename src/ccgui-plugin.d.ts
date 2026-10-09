@@ -70,7 +70,7 @@ export interface PluginContext {
   react: ReactLike;
   host: { locale: string; appVersion: string; sdkVersion: string; isWeb: boolean };
   storage: { get<T>(key: string): Promise<T | null>; set(key: string, value: unknown): Promise<void>; delete(key: string): Promise<void> };
-  /** 候选能力：窗口管理（权限 host:window）。官方宿主未发布时为 undefined。 */
+  /** 官方窗口能力（权限 host:window，SDK 0.3.19 起）；保留可选形状做防御性降级。 */
   window?: {
     getState(): Promise<PluginWindowSnapshot>;
     setNormalBounds(bounds: WindowBounds): Promise<PluginWindowSnapshot>;

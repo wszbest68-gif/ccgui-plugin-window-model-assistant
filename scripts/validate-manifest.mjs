@@ -2,7 +2,7 @@
 /**
  * window-model-assistant manifest 校验器。
  * 权限白名单对齐 desktop-cc-gui 官方 packages/plugin-sdk/spec/permissions.json
- * （单一事实源）；只含官方宿主已发布的权限，不含任何未合入上游的候选权限。
+ * （单一事实源）；只含官方宿主已发布的权限，不含私有候选权限。
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -11,7 +11,7 @@ import path from "node:path";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const manifest = JSON.parse(readFileSync(path.join(root, "manifest.json"), "utf8"));
 
-// 与官方 spec/permissions.json knownPermissions 保持一致（SDK 0.3.15）
+// 与本插件使用到的官方 spec/permissions.json 权限保持一致（SDK 0.3.19）。
 const KNOWN = new Set([
   "storage",
   "ui:settings-section",
@@ -36,6 +36,8 @@ const KNOWN = new Set([
   "host:session",
   "host:workspace",
   "host:workspace:remote",
+  "host:window",
+  "host:models",
 ]);
 
 const NETWORK_RE = /^network:[A-Za-z0-9.-]+(?::\d+(?:-\d+)?)?$/;
