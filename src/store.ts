@@ -178,7 +178,7 @@ export class AssistantStore {
   private readonly copy: Copy;
   constructor(private readonly ctx: PluginContext, copy?: Copy) {
     this.copy = copy ?? resolveCopy(ctx.host.locale);
-    // 窗口/完整模型目录是候选能力：官方宿主未发布时为 undefined，同步探测一次即可
+    // 窗口能力已在 SDK 0.3.19 / CC GUI 1.1.2 发布；仍同步探测一次以防异常宿主。
     const windowSupported = !!ctx.window && typeof ctx.window.getState === "function";
     this.state = {
       loaded: false, busy: false, windowSupported,
@@ -276,7 +276,6 @@ export class AssistantStore {
     catch (error) { this.set({ catalogErrors: [`缓存读取失败：${asMessage(error)}`] }); }
     try {
       // 官方 agent 目录（SDK 0.3.14 起，权限 agent）。
-      // 注：完整多来源目录 API（host:models）尚未合入上游宿主；合入后由后续版本启用。
       if (this.ctx.agent && typeof this.ctx.agent.catalog === "function") {
         const groups = adaptAgentCatalog(await this.ctx.agent.catalog(this.state.workspace || ""));
         if (groups.some((group) => group.sources.length > 0)) {

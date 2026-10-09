@@ -1,6 +1,6 @@
 {
   "name": "ccgui-plugin-window-model-assistant",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "CC GUI 主窗口尺寸位置恢复与模型目录透明查看插件。",
   "type": "module",
